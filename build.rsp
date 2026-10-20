@@ -1,0 +1,12 @@
+/nologo
+/target:winexe
+/platform:anycpu
+/optimize+
+/unsafe
+/out:BatteryViewer.exe
+/win32manifest:app.manifest
+src\HidApi.cs
+src\HidDevice.cs
+src\Protocols.cs
+src\BatteryReader.cs
+src\Program.cs

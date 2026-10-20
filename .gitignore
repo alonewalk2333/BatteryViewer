@@ -1,0 +1,6 @@
+batteryviewer.ini
+*.user
+.vs/
+bin/
+obj/
+*.log
