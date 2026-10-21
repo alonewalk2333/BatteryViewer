@@ -1,29 +1,34 @@
 # 2.4G 外设电量查看器
 
-Windows 上查看 2.4G 无线外设（鼠标/耳机）电量的实体软件。**零依赖**，双击 `BatteryViewer.exe` 即用——不用装 Python、不用装任何运行库、不用联网。
+Windows 上查看 2.4G 无线外设（鼠标/键盘/耳机）电量的实体软件。**零依赖**，双击即用——不用装 Python、不用装任何运行库、不用联网。
+
+![icon](app.ico)
+
+## 下载安装
+
+**普通用户**：到 [Releases](../../releases) 下载最新版 `Setup.exe`，双击安装（含桌面/开始菜单快捷方式、系统可卸载）。
+
+**便携党**：下载 `BatteryViewer.exe` 单文件直接跑。
 
 ## 特点
 
-- 纯 C# + .NET Framework，P/Invoke 直接调 `hid.dll` / `setupapi.dll` / `kernel32.dll`
-- 单文件原生 exe（约 44 KB），双击即用
-- 枚举本机所有 HID 设备，自动识别协议读取电量
-- 毛玻璃卡片式界面：大号百分比 + 进度条，颜色分级（绿 ≥60 / 黄 30-59 / 红 <30）
-- **自定义背景图 + 高斯模糊**（毛玻璃效果），设置自动记忆
+- 纯 C# + WPF，P/Invoke 直接调 `hid.dll` / `setupapi.dll`，WinRT API 读蓝牙 BLE
+- 无边框圆角窗口 + 毛玻璃卡片 + 投影阴影，现代深/浅色双主题自动切换
+- **6 种纯色背景 + 自定义背景图**（强度可调毛玻璃，不损失原图分辨率）
+- **托盘常驻**：动态电量图标（绿/黄/红 + 数字）、悬停显示全部设备电量、可指定图标显示哪台设备
+- 电量颜色分级（绿 ≥60 / 黄 30-59 / 红 <30），大号百分比 + 进度条
 - 点击卡片看详情（设备名、VID/PID、读取来源、电压）
 - 每 60 秒自动刷新 + 手动刷新
 - 不联网、不写日志、不装驱动
-
-## 下载
-
-到 [Releases](../../releases) 下载 `BatteryViewer.exe`，或直接下载仓库根目录的 `BatteryViewer.exe`。
 
 ## 支持的设备
 
 | 设备 | 读取方式 |
 |------|----------|
-| 罗技 G703（Lightspeed） | HID++ 2.0 电池电压（0x1001，锂电池线性折算百分比）✅ 真机验证 |
-| 罗技其他 HID++ 设备 | HID++ 2.0（0x1000 电池状态 / 0x1004 统一电池 / 0x1001 电压） |
-| 标准 HID 电池字段 | 任意设备通用兜底（Battery Strength 0x0006/0x0020、电池系统页 0x0085） |
+| 罗技 G703（Lightspeed） | HID++ 2.0 电池电压（0x1001，锂电池线性折算）✅ 真机验证 |
+| 罗技其他 HID++ 设备 | HID++ 2.0（0x1000 / 0x1004 / 0x1001） |
+| **蓝牙 BLE 设备**（如狼蛛 F2098 键盘） | 标准 Battery Service 0x180F ✅ 真机验证 |
+| 标准 HID 电池字段 | 任意设备通用兜底 |
 | ATK / VXE 无线鼠标 | Nordic 方案（协议 1 / 协议 2） |
 | VXE / VGN 无线鼠标 | Nordic 方案（协议 1） |
 | Endgame Gear | 私有 Feature Report |
@@ -31,55 +36,54 @@ Windows 上查看 2.4G 无线外设（鼠标/耳机）电量的实体软件。**
 | Nordic nRF 接收器 | Feature Report 0x05 |
 | DARKRIM SHADOW 耳机 | 杰理 TLV 私有协议（CRC16） |
 
-## 使用方法
-
-1. 下载并双击 `BatteryViewer.exe`
-2. 界面自动枚举设备并显示电量
-3. 点「刷新电量」手动刷新；默认每 60 秒自动刷新
-4. 点「设置背景」选背景图，可开高斯模糊
-5. 点击设备卡片查看详情
-
-> ⚠️ 无线设备会休眠。如果显示"没有读到电量"，先**动一下鼠标/按一下键盘**再点刷新。
+> ⚠️ 国产手柄（飞智等）在 Windows 下伪装成 Xbox 手柄走 XInput，协议不含电量，**物理上读不到**——本工具不支持，也别指望其他工具能读到。
+> ⚠️ 无线设备会休眠，读不到时先动一下设备再刷新。
 
 ## 自己编译
 
-不需要 Visual Studio，用系统自带的 C# 编译器即可：
-
-```bat
-双击 编译.bat
-```
-
-或手动：
-
-```bat
-%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe @build.rsp
-```
-
-## 源码结构
+不需要 Visual Studio，双击 `编译.bat`（用系统自带 C# 编译器 + WPF 运行库）。
 
 ```
 src/
-  HidApi.cs        HID 枚举 + 结构体定义
-  HidDevice.cs     设备打开/读写（独立异步读句柄，防并发崩溃）
-  Protocols.cs     厂商协议表 + DARKRIM 杰理 TLV/CRC16
-  BatteryReader.cs 多策略电量读取引擎（标准字段/厂商协议/罗技 HID++/DARKRIM）
-  Program.cs       主界面（毛玻璃卡片、背景图、高斯模糊）
+  HidApi.cs           HID 枚举 + 结构体定义
+  HidDevice.cs        设备打开/读写（独立异步读句柄，防并发崩溃）
+  Protocols.cs        厂商协议表 + DARKRIM 杰理 TLV/CRC16
+  BatteryReader.cs    多策略电量读取引擎（标准字段/厂商协议/罗技 HID++）
+  BluetoothReader.cs  蓝牙 BLE 电池服务读取（WinRT GATT）
+  MainWindow.cs       主界面（WPF：主题/背景/毛玻璃/托盘/设置）
+  App.cs              入口
+  Installer.cs        安装向导（编译成 Setup.exe）
 ```
-
-## 技术要点
-
-- 罗技 HID++ 2.0：查询前需先 ping 唤醒（设备休眠）；`Root.GetFeature` 回复的 feature index 在**第 4 字节**（不是第 6 字节，那是版本号）。
-- HID++ 电压设备（如 G703）只报毫伏，按锂电池 3.0V–4.2V 线性折算百分比。
-- 同一 HID 句柄上「阻塞读 + 并发写」会崩进程，用独立 `FILE_FLAG_OVERLAPPED` 读句柄 + 事件超时规避。
 
 ## 协议来源
 
-厂商私有协议逆向自 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)（罗技 HID++ 规范参考 Solaar / Logitech cpg-docs）。
+厂商私有协议逆向自 [yszyszysz233/2.4G-battery-viewer](https://github.com/yszyszysz233/2.4G-battery-viewer)（罗技 HID++ 规范参考 Solaar）。
 
-## 你的设备不在列表里？
+## 更新日志
 
-把设备型号或 VID/PID 发到 Issues，我可以按这套方法逆向出协议补进去。
+### v1.3（2026-10-21）— 图标 + 安装程序
+- 全新应用图标（电池 + 电量格），exe / 任务栏 / 快捷方式统一
+- 自制安装向导 `Setup.exe`：三步安装、桌面/开始菜单快捷方式、系统「设置→应用」可卸载
+- 修：背景图按实际亮度自动判断深浅主题（白图不再配白字）
+- 修：背景图跟随窗口圆角（Border Clip 裁剪）
+- 主题切换渲染级兜底，任何路径漏刷新都会自动补上
+
+### v1.2（2026-10-20）— WPF 重写
+- 界面层整体从 WinForms 迁移到 WPF：无边框圆角窗口、卡片投影阴影、悬停高亮
+- 毛玻璃改为 GPU 实时模糊，**不损失原图分辨率**，强度 0-100% 滑条可调
+- 托盘增强：单击开主窗、右键菜单、动态电量图标、悬停显示全部设备、可指定图标设备
+- 退出询问 + 记住选择；设置改双标签页；下拉框禁用滚轮误滑
+- 标题栏/按钮/弹窗全部跟随背景明暗自动切换配色
+
+### v1.1（2026-10-20）— 蓝牙 BLE 支持
+- 新增蓝牙 BLE 电池服务（GATT 0x180F）读取通道，支持蓝牙键盘等外设
+- 新增 6 种纯色背景（默认白色），文字颜色随背景明暗自动切换
+- HID++ 设备名读取（如 G703 显示完整型号名）
+
+### v1.0（2026-10-20）— 初始版本
+- 罗技 HID++ 2.0（含 G703 电压折算）、标准 HID 电池字段、ATK/VXE、Endgame、VAXEE、Nordic、DARKRIM 多协议电量读取
+- 深色卡片式界面、60 秒自动刷新、设备详情
 
 ## License
 
-仅供学习与个人使用。
+MIT
