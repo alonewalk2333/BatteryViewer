@@ -24,7 +24,7 @@ echo 使用编译器: %CSC%
 echo.
 
 rem ---------- 1. 主程序 ----------
-"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /unsafe /out:BatteryViewer.exe /win32manifest:app.manifest /win32icon:app.ico /r:"%WPF%\PresentationFramework.dll" /r:"%WPF%\PresentationCore.dll" /r:"%WPF%\WindowsBase.dll" /r:"%SX%" /r:"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\System.Windows.Forms.dll" /r:"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\System.Drawing.dll" /r:"%SRW%" /r:"%SR%" /r:"%WINDIR%\System32\WinMetadata\Windows.Foundation.winmd" /r:"%WINDIR%\System32\WinMetadata\Windows.Devices.winmd" /r:"%WINDIR%\System32\WinMetadata\Windows.Storage.winmd" src\HidApi.cs src\HidDevice.cs src\Protocols.cs src\BatteryReader.cs src\BluetoothReader.cs src\MainWindow.cs src\App.cs
+"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /unsafe /out:BatteryViewer.exe /win32manifest:app.manifest /win32icon:app.ico /r:"%WPF%\PresentationFramework.dll" /r:"%WPF%\PresentationCore.dll" /r:"%WPF%\WindowsBase.dll" /r:"%SX%" /r:"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\System.Windows.Forms.dll" /r:"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\System.Drawing.dll" /r:"%SRW%" /r:"%SR%" /r:"%WINDIR%\System32\WinMetadata\Windows.Foundation.winmd" /r:"%WINDIR%\System32\WinMetadata\Windows.Devices.winmd" /r:"%WINDIR%\System32\WinMetadata\Windows.Storage.winmd" src\HidApi.cs src\HidDevice.cs src\Protocols.cs src\BatteryReader.cs src\BluetoothReader.cs src\FloatingWidget.cs src\AutoStart.cs src\MainWindow.cs src\App.cs
 
 if errorlevel 1 (
     echo.

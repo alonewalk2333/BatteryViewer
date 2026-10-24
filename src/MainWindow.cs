@@ -17,6 +17,7 @@ namespace BatteryViewer
     {
         // ---- 设置 ----
         string bgPath = "";
+        string bgMode = "auto";   // 启动背景模式：auto=有图用图 / color=始终纯色 / image=始终图片
         int blurStrength = 40;   // 毛玻璃强度 0-100（0=关闭）
         int bgColorIndex = 0;
         string exitMode = "ask";
@@ -26,6 +27,16 @@ namespace BatteryViewer
         bool imageIsDark = true;   // 背景图平均亮度（浅图=false）
         bool realExit = false;
         bool lastDarkState = true;   // 主题兜底检测
+        bool floatingEnabled = true; // 桌面悬浮窗开关（默认开启）
+        int floatingDeviceIndex = -1; // 悬浮窗徽标显示哪台设备（-1=第一台）
+        bool floatingDark = true;    // 悬浮窗配色（true=深色）
+        bool apiEnabled = false;     // 本地 HTTP API 开关
+        int apiPort = 8787;          // 本地 API 端口
+        bool alertEnabled = true;    // 低电量报警开关
+        int alertThreshold = 20;     // 低电量阈值（%）
+        readonly Dictionary<string, bool> alertState = new Dictionary<string, bool>();
+        ApiServer apiServer;
+        FloatingWidget floating;
 
         // 数据
         class DeviceRow
@@ -134,7 +145,140 @@ namespace BatteryViewer
             timer.Tick += (s, e) => { if (!refreshing) RefreshAll(); };
             timer.Start();
 
+            // 本地 API
+            if (apiEnabled) StartApi();
+
+            // 桌面悬浮窗
+            if (floatingEnabled) ShowFloating();
+
             Loaded += (s, e) => RefreshAll();
+        }
+
+        // ---- 本地 API ----
+        void StartApi()
+        {
+            StopApi();
+            apiServer = new ApiServer(apiPort, BuildApiSnapshot, () => alertThreshold);
+            if (!apiServer.Start()) apiServer = null;  // 端口被占等情况：静默降级，不影响主功能
+        }
+
+        void StopApi()
+        {
+            if (apiServer != null) { apiServer.Stop(); apiServer = null; }
+        }
+
+        List<ApiServer.Snapshot> BuildApiSnapshot()
+        {
+            var list = new List<ApiServer.Snapshot>();
+            var byKey = new Dictionary<string, ApiServer.Snapshot>();
+            var rows = lastRows;  // 引用快照，刷新线程整体替换，遍历安全
+            foreach (var r in rows)
+            {
+                var s = new ApiServer.Snapshot
+                {
+                    VidPid = r.Info.VidPid,
+                    Ok = r.Readable && r.Result != null && r.Result.Ok,
+                    Name = !string.IsNullOrEmpty(r.Name) ? r.Name : DeviceLabel(r.Info),
+                };
+                if (r.Result != null)
+                {
+                    s.Level = r.Result.Level;
+                    s.Status = r.Result.Status;
+                    s.VoltageMv = r.Result.VoltageMv;
+                    s.Source = r.Result.Source;
+                    s.Detail = r.Result.Detail;
+                }
+                // 同一设备会枚举出多个 HID 接口：去重，优先保留读出电量的那条
+                string key = s.Name + "|" + s.VidPid;
+                ApiServer.Snapshot prev;
+                if (!byKey.TryGetValue(key, out prev))
+                {
+                    byKey[key] = s;
+                    list.Add(s);
+                }
+                else if (!prev.Ok && s.Ok)
+                {
+                    int i = list.IndexOf(prev);
+                    if (i >= 0) list[i] = s;
+                    byKey[key] = s;
+                }
+            }
+            return list;
+        }
+
+        // ---- 低电量报警 ----
+        void CheckAlerts(List<DeviceRow> rows)
+        {
+            if (!alertEnabled || trayIcon == null) return;
+            foreach (var r in rows)
+            {
+                if (!r.Readable || r.Result == null || r.Result.Level == null) continue;
+                string key = r.Info.VidPid + "|" + r.Result.Source;
+                string name = !string.IsNullOrEmpty(r.Name) ? r.Name : DeviceLabel(r.Info);
+                int lv = r.Result.Level.Value;
+                if (lv <= alertThreshold)
+                {
+                    bool warned;
+                    if (!alertState.TryGetValue(key, out warned)) warned = false;
+                    if (!warned)
+                    {
+                        alertState[key] = true;
+                        try
+                        {
+                            trayIcon.ShowBalloonTip(6000, "低电量提醒",
+                                name + " 只剩 " + lv + "% 了，记得充电",
+                                System.Windows.Forms.ToolTipIcon.Warning);
+                        }
+                        catch { }
+                    }
+                }
+                else if (lv > alertThreshold + 5)
+                {
+                    alertState[key] = false;  // 回到安全线以上才重置，避免 20% 附近反复轰炸
+                }
+            }
+        }
+
+        // ---- 悬浮窗 ----
+        void ShowFloating()
+        {
+            if (floating != null) { floating.Show(); floating.PlaceBottomRight(); return; }
+            floating = new FloatingWidget();
+            floating.ApplyTheme(floatingDark);
+            floating.CloseRequested += () => { floatingEnabled = false; SaveConfig(); if (floating != null) { floating.Close(); floating = null; } };
+            floating.Show();
+            floating.PlaceBottomRight();
+        }
+
+        void HideFloating()
+        {
+            if (floating != null) { floating.Hide(); }
+        }
+
+        void UpdateFloating()
+        {
+            if (floating == null || !floating.IsVisible) return;
+            var lite = new List<DeviceRowLite>();
+            int idx = 0;
+            DeviceRowLite first = null;
+            foreach (var r in lastRows)
+            {
+                if (!r.Readable || r.Result == null || r.Result.Level == null) continue;
+                string name = !string.IsNullOrEmpty(r.Name) ? r.Name : DeviceLabel(r.Info);
+                name = name.Split(' ')[0];
+                if (name.Length > 12) name = name.Substring(0, 12);
+                var item = new DeviceRowLite { Name = name, Level = r.Result.Level.Value };
+                lite.Add(item);
+                if (first == null) first = item;
+            }
+            // 指定设备显示在徽标（列表第一项）
+            if (floatingDeviceIndex >= 0 && floatingDeviceIndex < lite.Count)
+            {
+                var chosen = lite[floatingDeviceIndex];
+                lite.RemoveAt(floatingDeviceIndex);
+                lite.Insert(0, chosen);
+            }
+            floating.SetData(lite);
         }
 
         // ---- UI 构建 ----
@@ -239,8 +383,9 @@ namespace BatteryViewer
                 rootBorder.Clip = new RectangleGeometry(
                     new Rect(0, 0, e2.NewSize.Width, e2.NewSize.Height), 14, 14);
             };
-            lastDarkState = IsDarkBackground();
-            ApplyTheme();
+            // 启动时按配置应用背景（修复：此前 BuildUi 后没人把 bgImage 贴到控件上，
+            // 开机自启时背景图永远不显示，只有手动打开设置点应用才会出现）
+            LoadBackground();
         }
 
         // 标题栏文字/按钮颜色随主题（深色背景浅字，浅色背景深字）
@@ -337,7 +482,7 @@ namespace BatteryViewer
         void LoadBackground()
         {
             bgImage = null;
-            if (!string.IsNullOrEmpty(bgPath) && File.Exists(bgPath))
+            if (bgMode != "color" && !string.IsNullOrEmpty(bgPath) && File.Exists(bgPath))
             {
                 try
                 {
@@ -440,6 +585,8 @@ namespace BatteryViewer
                     lblStatus.Text = ok > 0 ? "读到 " + ok + " 台设备的电量" : "没有读到电量（设备可能休眠，动一下鼠标再刷新）";
                     btnRefresh.IsEnabled = true;
                     UpdateTray();
+                    UpdateFloating();
+                    CheckAlerts(rows);
                 }));
                 refreshing = false;
             });
@@ -809,7 +956,7 @@ namespace BatteryViewer
         // ---- 托盘 ----
         System.Drawing.Icon MakeTrayIcon(int? level)
         {
-            System.Drawing.Color bgc = level == null ? System.Drawing.Color.FromArgb(90, 100, 115)
+            System.Drawing.Color bgc = level == null ? System.Drawing.Color.FromArgb(255, 90, 100, 115)
                 : System.Drawing.Color.FromArgb(LevelColor(level.Value).R, LevelColor(level.Value).G, LevelColor(level.Value).B);
             using (var bmp = new System.Drawing.Bitmap(32, 32))
             using (var g = System.Drawing.Graphics.FromImage(bmp))
@@ -875,136 +1022,83 @@ namespace BatteryViewer
             catch { }
         }
 
-        // ---- 设置 ----
+        // ---- 设置（WPF 磨砂玻璃窗） ----
         public void OpenSettings()
         {
-            bool dark = IsDarkBackground();
-            var form = new System.Windows.Forms.Form
-            {
-                Text = "设置",
-                Size = new System.Drawing.Size(420, 330),
-                MinimumSize = new System.Drawing.Size(380, 280),
-                StartPosition = System.Windows.Forms.FormStartPosition.CenterParent,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                BackColor = System.Drawing.Color.FromArgb(
-                    (int)(dark ? 30 : 248), (int)(dark ? 32 : 249), (int)(dark ? 40 : 251)),
-            };
-
-            var tabs = new System.Windows.Forms.TabControl { Dock = System.Windows.Forms.DockStyle.Fill };
-            var tabBg = new System.Windows.Forms.TabPage("背景");
-            var tabTray = new System.Windows.Forms.TabPage("托盘");
-
-            // 背景页
-            var lblColor = new System.Windows.Forms.Label { Text = "纯色背景：", Location = new System.Drawing.Point(16, 16), AutoSize = true };
-            var cboColor = new WheelDisabledComboBox { Location = new System.Drawing.Point(16, 40), Width = 200, DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList };
-            for (int i = 0; i < BG_COLORS.Length; i++) cboColor.Items.Add(BG_COLOR_NAMES[i]);
-            cboColor.SelectedIndex = Math.Max(0, Math.Min(bgColorIndex, BG_COLORS.Length - 1));
-            var preview = new System.Windows.Forms.Panel { Location = new System.Drawing.Point(228, 40), Size = new System.Drawing.Size(70, 24), BackColor = System.Drawing.Color.FromArgb(BgColor.R, BgColor.G, BgColor.B), BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle };
-            cboColor.SelectedIndexChanged += (s, e) => preview.BackColor = System.Drawing.Color.FromArgb(BG_COLORS[cboColor.SelectedIndex].R, BG_COLORS[cboColor.SelectedIndex].G, BG_COLORS[cboColor.SelectedIndex].B);
-
-            var lblImg = new System.Windows.Forms.Label { Text = "背景图片（优先级高于纯色，任意分辨率均可）：", Location = new System.Drawing.Point(16, 80), AutoSize = true };
-            var txt = new System.Windows.Forms.TextBox { Text = bgPath, Location = new System.Drawing.Point(16, 104), Width = 230 };
-            var btnBrowse = new System.Windows.Forms.Button { Text = "浏览…", Location = new System.Drawing.Point(254, 102), Size = new System.Drawing.Size(66, 26) };
-            var lblBlur = new System.Windows.Forms.Label { Text = "毛玻璃强度：", Location = new System.Drawing.Point(16, 144), AutoSize = true };
-            var sliderBlur = new System.Windows.Forms.TrackBar { Location = new System.Drawing.Point(110, 136), Width = 170, Height = 36, Minimum = 0, Maximum = 100, TickFrequency = 25, Value = blurStrength };
-            var lblBlurVal = new System.Windows.Forms.Label { Text = blurStrength + "%", Location = new System.Drawing.Point(288, 144), AutoSize = true };
-            sliderBlur.ValueChanged += (s2, e2) =>
-            {
-                blurStrength = sliderBlur.Value;
-                lblBlurVal.Text = blurStrength + "%";
-                if (bgImageCtrl != null)
-                    bgImageCtrl.Effect = blurStrength > 0 ? new BlurEffect { Radius = blurStrength * 0.6 } : null;
-            };
-            var btnClear = new System.Windows.Forms.Button { Text = "清除背景图", Location = new System.Drawing.Point(16, 178), Size = new System.Drawing.Size(110, 28) };
-            tabBg.Controls.AddRange(new System.Windows.Forms.Control[] { lblColor, cboColor, preview, lblImg, txt, btnBrowse, lblBlur, sliderBlur, lblBlurVal, btnClear });
-
-            // 托盘页
-            var lblTray = new System.Windows.Forms.Label { Text = "托盘图标显示哪台设备的电量：", Location = new System.Drawing.Point(16, 20), AutoSize = true };
-            var cboTray = new WheelDisabledComboBox { Location = new System.Drawing.Point(16, 48), Width = 260, DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList };
-            cboTray.Items.Add("自动（第一台读到的设备）");
+            // 设备名列表（供下拉选择）
+            var names = new List<string>();
             foreach (var r in lastRows)
             {
                 if (!r.Readable || r.Result == null) continue;
-                cboTray.Items.Add(!string.IsNullOrEmpty(r.Name) ? r.Name : DeviceLabel(r.Info));
+                string n = !string.IsNullOrEmpty(r.Name) ? r.Name : DeviceLabel(r.Info);
+                names.Add(n);
             }
-            if (trayDeviceIndex < 0) cboTray.SelectedIndex = 0;
-            else if (trayDeviceIndex < cboTray.Items.Count) cboTray.SelectedIndex = trayDeviceIndex + 1;
-            else cboTray.SelectedIndex = 0;
-            var lblHint = new System.Windows.Forms.Label
-            {
-                Text = "选中的设备电量会显示在托盘圆形图标上。\n悬停仍显示全部设备。",
-                Location = new System.Drawing.Point(16, 90),
-                AutoSize = true,
-            };
-            // 关闭窗口行为
-            var lblExit = new System.Windows.Forms.Label { Text = "点击关闭按钮时：", Location = new System.Drawing.Point(16, 140), AutoSize = true };
-            var cboExit = new WheelDisabledComboBox { Location = new System.Drawing.Point(16, 166), Width = 260, DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList };
-            cboExit.Items.Add("每次询问（保留后台 / 完全退出）");
-            cboExit.Items.Add("直接保留在后台");
-            cboExit.Items.Add("直接完全退出");
-            if (exitMode == "tray") cboExit.SelectedIndex = 1;
-            else if (exitMode == "exit") cboExit.SelectedIndex = 2;
-            else cboExit.SelectedIndex = 0;
-            tabTray.Controls.AddRange(new System.Windows.Forms.Control[] { lblTray, cboTray, lblHint, lblExit, cboExit });
 
-            tabs.TabPages.Add(tabBg);
-            tabs.TabPages.Add(tabTray);
+            var sw = new SettingsWindow(bgColorIndex, bgPath, blurStrength, trayDeviceIndex, exitMode,
+                floatingEnabled, AutoStart.IsEnabled, floatingDeviceIndex, floatingDark, names, bgMode,
+                apiEnabled, apiPort, alertEnabled, alertThreshold);
+            sw.Owner = this;
+            sw.ShowDialog();
+            if (sw.Cancelled) return;
 
-            var btnPanel = new System.Windows.Forms.Panel { Dock = System.Windows.Forms.DockStyle.Bottom, Height = 48 };
-            var btnOk = new System.Windows.Forms.Button { Text = "应用", Size = new System.Drawing.Size(90, 30), Anchor = System.Windows.Forms.AnchorStyles.Right | System.Windows.Forms.AnchorStyles.Bottom, BackColor = System.Drawing.Color.FromArgb(88, 140, 255), ForeColor = System.Drawing.Color.White, FlatStyle = System.Windows.Forms.FlatStyle.Flat };
-            btnOk.FlatAppearance.BorderSize = 0;
-            var btnCancel = new System.Windows.Forms.Button { Text = "取消", Size = new System.Drawing.Size(90, 30), Anchor = System.Windows.Forms.AnchorStyles.Right | System.Windows.Forms.AnchorStyles.Bottom, FlatStyle = System.Windows.Forms.FlatStyle.Flat };
-            btnPanel.Controls.Add(btnOk);
-            btnPanel.Controls.Add(btnCancel);
-            btnPanel.Resize += (s, e) =>
-            {
-                btnOk.Location = new System.Drawing.Point(btnPanel.Width - 102, 9);
-                btnCancel.Location = new System.Drawing.Point(btnPanel.Width - 198, 9);
-            };
+            // 应用
+            bgColorIndex = sw.ResultBgColor;
+            bgPath = sw.ResultBgPath;
+            bgMode = sw.ResultBgMode;
 
-            btnBrowse.Click += (s, e) =>
-            {
-                using (var dlg = new System.Windows.Forms.OpenFileDialog())
-                {
-                    dlg.Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp|所有文件|*.*";
-                    if (dlg.ShowDialog(form) == System.Windows.Forms.DialogResult.OK) txt.Text = dlg.FileName;
-                }
-            };
-            btnClear.Click += (s, e) => { txt.Text = ""; };
-            btnOk.Click += (s, e) =>
-            {
-                bgColorIndex = cboColor.SelectedIndex < 0 ? 0 : cboColor.SelectedIndex;
-                bgPath = txt.Text.Trim();
-                // blurStrength 已由滑条 ValueChanged 实时更新
-                trayDeviceIndex = cboTray.SelectedIndex <= 0 ? -1 : cboTray.SelectedIndex - 1;
-                exitMode = cboExit.SelectedIndex == 1 ? "tray" : (cboExit.SelectedIndex == 2 ? "exit" : "ask");
-                SaveConfig();
-                LoadBackground();
-                UpdateTray();
-                // 重建 UI 背景
-                rootBorder.Background = MakeBackgroundBrush();
-                RenderCards();
-                form.Close();
-            };
-            btnCancel.Click += (s, e) => form.Close();
+            // 本地 API（开关或端口变化才重启）
+            alertEnabled = sw.ResultAlertEnabled;
+            alertThreshold = sw.ResultAlertThreshold;
 
-            form.Controls.Add(btnPanel);
-            form.Controls.Add(tabs);
-            form.ShowDialog();
+            if (sw.ResultApiEnabled != apiEnabled || sw.ResultApiPort != apiPort)
+            {
+                apiEnabled = sw.ResultApiEnabled;
+                apiPort = sw.ResultApiPort;
+                if (apiEnabled) StartApi(); else StopApi();
+            }
+            blurStrength = sw.ResultBlurStrength;
+            trayDeviceIndex = sw.ResultTrayDevice;
+            exitMode = sw.ResultExitMode;
+            floatingDeviceIndex = sw.ResultFloatingDevice;
+            floatingDark = sw.ResultFloatingDark;
+
+            // 悬浮窗开关
+            if (sw.ResultFloatingEnabled != floatingEnabled)
+            {
+                floatingEnabled = sw.ResultFloatingEnabled;
+                if (floatingEnabled) { ShowFloating(); }
+                else if (floating != null) { floating.Hide(); }
+            }
+            // 悬浮窗主题
+            if (floating != null) floating.ApplyTheme(floatingDark);
+
+            // 开机自启
+            AutoStart.SetEnabled(sw.ResultAutoStart);
+
+            SaveConfig();
+            LoadBackground();
+            UpdateTray();
+            UpdateFloating();
         }
 
-        // ---- 配置 ----
         void SaveConfig()
         {
             try
             {
                 var sb = new StringBuilder();
                 sb.AppendLine("bgpath=" + bgPath);
+                sb.AppendLine("bgmode=" + bgMode);
+                sb.AppendLine("api=" + (apiEnabled ? "1" : "0"));
+                sb.AppendLine("apiport=" + apiPort);
+                sb.AppendLine("alert=" + (alertEnabled ? "1" : "0"));
+                sb.AppendLine("alertthreshold=" + alertThreshold);
                 sb.AppendLine("blur=" + blurStrength);
                 sb.AppendLine("color=" + bgColorIndex);
                 sb.AppendLine("exitmode=" + exitMode);
                 sb.AppendLine("traydevice=" + trayDeviceIndex);
+                sb.AppendLine("floating=" + (floatingEnabled ? "1" : "0"));
+                sb.AppendLine("floatingdevice=" + floatingDeviceIndex);
+                sb.AppendLine("floatingdark=" + (floatingDark ? "1" : "0"));
                 File.WriteAllText(configPath, sb.ToString());
             }
             catch { }
@@ -1022,10 +1116,18 @@ namespace BatteryViewer
                     string k = line.Substring(0, eq).Trim();
                     string v = line.Substring(eq + 1).Trim();
                     if (k == "bgpath") bgPath = v;
+                    else if (k == "bgmode") bgMode = v;
+                    else if (k == "api") apiEnabled = (v == "1");
+                    else if (k == "apiport") int.TryParse(v, out apiPort);
+                    else if (k == "alert") alertEnabled = (v == "1");
+                    else if (k == "alertthreshold") int.TryParse(v, out alertThreshold);
                     else if (k == "blur") int.TryParse(v, out blurStrength);
                     else if (k == "color") int.TryParse(v, out bgColorIndex);
                     else if (k == "exitmode") exitMode = v;
                     else if (k == "traydevice") int.TryParse(v, out trayDeviceIndex);
+                    else if (k == "floating") floatingEnabled = (v == "1");
+                    else if (k == "floatingdevice") int.TryParse(v, out floatingDeviceIndex);
+                    else if (k == "floatingdark") floatingDark = (v == "1");
                 }
             }
             catch { }

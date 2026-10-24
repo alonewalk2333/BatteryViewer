@@ -4,3 +4,5 @@ batteryviewer.ini
 bin/
 obj/
 *.log
+py_battery_viewer/
+*.bak
