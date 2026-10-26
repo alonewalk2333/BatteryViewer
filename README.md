@@ -111,6 +111,14 @@ GET http://localhost:8787/api/alerts            # 当前低于报警阈值的设
 
 ## 更新日志
 
+### v1.7（2026-10-26）— 华硕 ROG 鼠标电量支持
+
+- 新增：**华硕 ROG 无线鼠标**电量读取（OMNI 通用接收器 `0x1ACE` 通道），战刃3 无线版真机验证
+- 协议参考 G-Helper 与 peripheral-battery-tray 的开源逆向成果
+- 新增：软件自带网页电量面板（`http://localhost:8787/widget`，同源零跨域）
+- 修：浏览器 PNA 策略拦截本地 API 的问题（补 `Access-Control-Allow-Private-Network` 头）
+- 编译脚本加固：编译失败时不再误报成功（校验产物时间戳）
+
 ### v1.6（2026-10-24）— 启动背景修复 + 本地 API + 低电量报警
 
 - 修复：开机自启时自定义背景图不显示（BuildUi 后未应用已加载的图片）。

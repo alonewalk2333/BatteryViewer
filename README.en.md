@@ -110,6 +110,14 @@ Vendor proprietary protocols are reverse-engineered from [yszyszysz233/2.4G-batt
 
 ## Changelog
 
+### v1.7 (2026-10-26) — ASUS ROG mouse battery support
+
+- Add: **ASUS ROG wireless mouse** battery reading (OMNI universal receiver `0x1ACE` channel), verified on a Gladius III Wireless
+- Protocol references the open-source reverse engineering in G-Helper and peripheral-battery-tray
+- Add: built-in web battery panel (`http://localhost:8787/widget`, same-origin, zero CORS hassle)
+- Fix: browsers blocking the local API due to Private Network Access policy (added `Access-Control-Allow-Private-Network` header)
+- Build script hardening: no more false "build succeeded" when compilation fails (output timestamp is now verified)
+
 ### v1.6 (2026-10-24) — Startup background fix + Local API + Low battery alerts
 
 - Fix: custom background image not showing on autostart (image was loaded but never applied after the UI was built)
