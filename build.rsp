@@ -25,6 +25,7 @@ src\BluetoothReader.cs
 src\FloatingWidget.cs
 src\SettingsWindow.cs
 src\ApiServer.cs
+src\AsusReader.cs
 src\AutoStart.cs
 src\MainWindow.cs
 src\App.cs

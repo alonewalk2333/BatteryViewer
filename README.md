@@ -39,6 +39,7 @@ Windows 上查看 2.4G 无线外设（鼠标/键盘/耳机）电量的实体软�
 | VAXEE / ZYGEN               | 私有 Feature Report                    |
 | Nordic nRF 接收器              | Feature Report 0x05                  |
 | DARKRIM SHADOW 耳机           | 杰理 TLV 私有协议（CRC16）                   |
+| **华硕 ROG 无线鼠标**（战刃3 等经 OMNI 接收器） | ROG 专有协议（`{03 12 07}` 查询，OMNI col03 通道）✅ 真机验证 |
 
 > ⚠️ 国产手柄（飞智等）在 Windows 下伪装成 Xbox 手柄走 XInput，协议不含电量，**物理上读不到**——本工具不支持，也别指望其他工具能读到。  
 > ⚠️ 无线设备会休眠，读不到时先动一下设备再刷新。
@@ -64,6 +65,7 @@ src/
 设置 → 「本地 API」开启后（默认端口 8787，可改），程序内嵌一个只监听本机回环的 HTTP 服务，供其它程序/脚本查询电量。外网无法访问。
 
 ```
+GET http://localhost:8787/widget                # 自带网页电量面板（浏览器直接打开）
 GET http://localhost:8787/api/ping              # 健康检查
 GET http://localhost:8787/api/battery           # 全部设备（含读取失败的）
 GET http://localhost:8787/api/battery?readable=1  # 只返回读出电量的设备

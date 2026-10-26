@@ -39,6 +39,7 @@ A native Windows app that shows the battery level of your 2.4G wireless peripher
 | VAXEE / ZYGEN | Vendor-specific Feature Report |
 | Nordic nRF receivers | Feature Report 0x05 |
 | DARKRIM SHADOW headsets | Jieli TLV proprietary protocol (CRC16) |
+| **ASUS ROG wireless mice** (Gladius III etc. via OMNI receiver) | ROG proprietary protocol (`{03 12 07}` query over the OMNI col03 channel) ✅ verified on real hardware |
 
 > ⚠️ Chinese gamepads (FlyDiGi etc.) masquerade as Xbox controllers over XInput on Windows — their protocol carries no battery data, so **no tool can read it**. Physically impossible, not a limitation of this app.
 > ⚠️ Wireless devices sleep. If a reading fails, move the device first, then refresh.

@@ -42,6 +42,10 @@ namespace BatteryViewer
                 if (r != null) return r;
             }
 
+            // 1.5) 华硕 ROG 鼠标（OMNI 接收器）
+            if (AsusReader.Matches(iface))
+                return AsusReader.ReadBattery(iface);
+
             // 2) DARKRIM 杰理
             if (iface.Vid == Darkrim.VID && iface.UsagePage == Darkrim.USAGE_PAGE && iface.OutputLen == Darkrim.REPORT_LEN)
                 return Darkrim.ReadInfo(iface);

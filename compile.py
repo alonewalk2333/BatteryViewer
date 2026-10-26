@@ -55,14 +55,20 @@ def run_csc(rsp, output_name):
     rsp_path = os.path.join(BASE, rsp)
     if not os.path.exists(rsp_path):
         raise FileNotFoundError(f"找不到响应文件：{rsp_path}")
-    result = subprocess.run([CSC, f"@{rsp_path}"], cwd=BASE, capture_output=True, text=True, encoding="gbk", errors="replace")
+    exe = os.path.join(BASE, output_name)
+    mtime_before = os.path.getmtime(exe) if os.path.exists(exe) else 0
+    result = subprocess.run([CSC, f"@{rsp_path}"], cwd=BASE, capture_output=True, text=True,
+                            encoding="gbk", errors="replace")
     if result.stdout:
         print(result.stdout)
     if result.stderr:
         print(result.stderr, file=sys.stderr)
-    exe = os.path.join(BASE, output_name)
     if not os.path.exists(exe):
         raise RuntimeError(f"编译失败，未生成 {output_name}")
+    if os.path.getmtime(exe) <= mtime_before:
+        raise RuntimeError(f"编译失败，{output_name} 未被更新（文件被占用？先 taskkill）")
+    if "error CS" in (result.stdout or ""):
+        raise RuntimeError("编译输出含 error CS，详见上方日志")
     size = os.path.getsize(exe)
     log(f"生成 {output_name} ({size} 字节)")
 
